@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="عام">
+
+        <ListPreference
+            android:key="pref_days"
+            android:title="@string/pref_days_title"
+            android:entries="@array/days_entries"
+            android:entryValues="@array/days_values"
+            android:defaultValue="-1"
+            android:summary="%s"
+            app:useSimpleSummaryProvider="true" />
+
+        <SwitchPreferenceCompat
+            android:key="pref_notification"
+            android:title="@string/pref_notif_title"
+            android:summary="@string/pref_notif_summary"
+            android:defaultValue="true" />
+
+        <SwitchPreferenceCompat
+            android:key="pref_float_button"
+            android:title="@string/pref_float_title"
+            android:summary="@string/pref_float_summary"
+            android:defaultValue="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="الخصوصية">
+
+        <Preference
+            android:key="pref_blacklist"
+            android:title="@string/pref_blacklist_title"
+            android:summary="@string/pref_blacklist_summary"
+            android:icon="@android:drawable/ic_menu_close_clear_cancel" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>
