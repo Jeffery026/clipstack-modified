@@ -36,6 +36,7 @@ public class MainActivity extends AppCompatActivity {
     };
 
     @Override protected void onCreate(Bundle s) {
+        ThemeManager.apply(this);
         super.onCreate(s);
         setContentView(R.layout.activity_main);
         db    = ClipDatabase.get(this);

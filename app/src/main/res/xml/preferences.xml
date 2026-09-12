@@ -2,6 +2,20 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+
+    <PreferenceCategory android:title="المظهر">
+
+        <ListPreference
+            android:key="pref_theme"
+            android:title="ثيم التطبيق"
+            android:entries="@array/theme_entries"
+            android:entryValues="@array/theme_values"
+            android:defaultValue="system"
+            android:icon="@android:drawable/ic_menu_manage"
+            app:useSimpleSummaryProvider="true" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="الحفظ والتشغيل">
 
         <ListPreference

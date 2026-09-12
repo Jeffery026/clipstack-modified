@@ -64,6 +64,16 @@ public class SettingsActivity extends AppCompatActivity {
         @Override public void onCreatePreferences(Bundle s, String r) {
             setPreferencesFromResource(R.xml.preferences, r);
 
+            // الثيم
+            ListPreference themePref = findPreference("pref_theme");
+            if (themePref!=null) {
+                themePref.setOnPreferenceChangeListener((p,v) -> {
+                    ThemeManager.setTheme(requireContext(), (String)v);
+                    requireActivity().recreate();
+                    return true;
+                });
+            }
+
             // مدة الحفظ
             ListPreference daysPref = findPreference("pref_days");
             if (daysPref!=null) {
