@@ -40,4 +40,8 @@
         <item>90</item>
         <item>-1</item>
     </string-array>
+    <string name="export_success">تم التصدير بنجاح</string>
+    <string name="export_all">تصدير الكل</string>
+    <string name="export_starred">تصدير المفضلة</string>
+    <string name="import_success">تم الاستيراد بنجاح</string>
 </resources>

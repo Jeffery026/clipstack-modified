@@ -1,7 +1,6 @@
 package com.clipstack.app;
 
 import android.content.pm.*;
-import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.view.*;
 import android.widget.*;
@@ -12,39 +11,83 @@ import java.util.*;
 
 public class BlacklistActivity extends AppCompatActivity {
 
-    private ClipDatabase db;
-    private Set<String>  blacklisted;
+    private ClipDatabase       db;
+    private Set<String>        blacklisted;
+    private RecyclerView       rv;
+    private ProgressBar        progress;
 
     @Override protected void onCreate(Bundle s) {
         super.onCreate(s);
-        setContentView(R.layout.activity_settings);
-        db = ClipDatabase.get(this);
-        blacklisted = db.getBlacklist();
+        // لا نستخدم activity_settings — نبني الـ layout يدوياً
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
 
-        Toolbar tb = findViewById(R.id.toolbar);
+        Toolbar tb = new Toolbar(this);
+        tb.setBackgroundColor(getColor(R.color.primary));
+        tb.setTitleTextColor(0xFFFFFFFF);
+        root.addView(tb, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, getActionBarSize()));
+
+        progress = new ProgressBar(this);
+        progress.setVisibility(View.VISIBLE);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = android.view.Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = dpToPx(24);
+        root.addView(progress, lp);
+
+        rv = new RecyclerView(this);
+        rv.setLayoutManager(new LinearLayoutManager(this));
+        rv.setVisibility(View.GONE);
+        root.addView(rv, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        setContentView(root);
         setSupportActionBar(tb);
-        if (getSupportActionBar()!=null) {
-            getSupportActionBar().setTitle(R.string.blacklist_title);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setTitle(getString(R.string.blacklist_title));
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
 
-        RecyclerView rv = new RecyclerView(this);
-        rv.setLayoutManager(new LinearLayoutManager(this));
+        db          = ClipDatabase.get(this);
+        blacklisted = db.getBlacklist();
 
-        FrameLayout container = findViewById(R.id.settings_container);
-        container.addView(rv);
-
-        // Load installed apps in background
+        // تحميل التطبيقات في خيط خلفي
         new Thread(() -> {
             PackageManager pm = getPackageManager();
-            List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
-            apps.sort((a,b) -> pm.getApplicationLabel(a).toString()
-                    .compareToIgnoreCase(pm.getApplicationLabel(b).toString()));
-            runOnUiThread(() -> rv.setAdapter(new AppAdapter(apps, pm)));
+            // فقط التطبيقات التي ثبّتها المستخدم
+            List<PackageInfo> pkgs = pm.getInstalledPackages(0);
+            List<ApplicationInfo> userApps = new ArrayList<>();
+            for (PackageInfo pi : pkgs) {
+                if ((pi.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0) {
+                    userApps.add(pi.applicationInfo);
+                }
+            }
+            userApps.sort((a, b) ->
+                    pm.getApplicationLabel(a).toString()
+                      .compareToIgnoreCase(pm.getApplicationLabel(b).toString()));
+
+            runOnUiThread(() -> {
+                progress.setVisibility(View.GONE);
+                rv.setVisibility(View.VISIBLE);
+                rv.setAdapter(new AppAdapter(userApps, pm));
+            });
         }).start();
     }
 
     @Override public boolean onSupportNavigateUp() { finish(); return true; }
+
+    private int getActionBarSize() {
+        int[] attrs = { android.R.attr.actionBarSize };
+        android.content.res.TypedArray a = obtainStyledAttributes(attrs);
+        int size = a.getDimensionPixelSize(0, dpToPx(56));
+        a.recycle();
+        return size;
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(dp * getResources().getDisplayMetrics().density);
+    }
 
     private class AppAdapter extends RecyclerView.Adapter<AppAdapter.VH> {
         final List<ApplicationInfo> apps;
@@ -55,6 +98,7 @@ public class BlacklistActivity extends AppCompatActivity {
             return new VH(LayoutInflater.from(p.getContext())
                     .inflate(R.layout.item_app, p, false));
         }
+
         @Override public void onBindViewHolder(VH h, int pos) {
             ApplicationInfo info = apps.get(pos);
             h.name.setText(pm.getApplicationLabel(info));

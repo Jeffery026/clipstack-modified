@@ -6,7 +6,7 @@
 
         <ListPreference
             android:key="pref_days"
-            android:title="@string/pref_days_title"
+            android:title="مدة حفظ النسخ"
             android:entries="@array/days_entries"
             android:entryValues="@array/days_values"
             android:defaultValue="-1"
@@ -15,26 +15,42 @@
 
         <SwitchPreferenceCompat
             android:key="pref_notification"
-            android:title="@string/pref_notif_title"
-            android:summary="@string/pref_notif_summary"
+            android:title="الإشعار الدائم"
+            android:summary="يُبقي الخدمة نشطة في الخلفية"
             android:defaultValue="true"
             android:icon="@android:drawable/ic_dialog_info" />
 
         <SwitchPreferenceCompat
             android:key="pref_float_button"
-            android:title="@string/pref_float_title"
-            android:summary="@string/pref_float_summary"
+            android:title="الزر العائم"
+            android:summary="زر سريع يظهر فوق جميع التطبيقات"
             android:defaultValue="false"
             android:icon="@android:drawable/ic_input_add" />
 
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="الخصوصية والأمان">
+    <PreferenceCategory android:title="النسخ الاحتياطي">
+
+        <Preference
+            android:key="pref_export"
+            android:title="تصدير النسخ"
+            android:summary="حفظ نسخة احتياطية كملف نصي وإرسالها"
+            android:icon="@android:drawable/ic_menu_save" />
+
+        <Preference
+            android:key="pref_import"
+            android:title="استيراد نسخ"
+            android:summary="استيراد من ملف نسخ احتياطية سابق"
+            android:icon="@android:drawable/ic_menu_upload" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="الخصوصية">
 
         <Preference
             android:key="pref_blacklist"
-            android:title="@string/pref_blacklist_title"
-            android:summary="@string/pref_blacklist_summary"
+            android:title="القائمة السوداء"
+            android:summary="تطبيقات مستثناة من المراقبة"
             android:icon="@android:drawable/ic_menu_close_clear_cancel" />
 
     </PreferenceCategory>
@@ -43,8 +59,8 @@
 
         <Preference
             android:key="pref_accessibility"
-            android:title="تفعيل إمكانية الوصول"
-            android:summary="مطلوب للتعرف على التطبيق المصدر وتحسين التقاط النسخ"
+            android:title="فتح إعدادات إمكانية الوصول"
+            android:summary="مطلوب للتعرف التلقائي على التطبيق المصدر"
             android:icon="@android:drawable/ic_menu_preferences" />
 
     </PreferenceCategory>
