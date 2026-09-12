@@ -1,5 +1,6 @@
 package com.clipstack.app;
 
+import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -9,8 +10,13 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.preference.*;
+import java.io.OutputStream;
 
 public class SettingsActivity extends AppCompatActivity {
+
+    private static final int REQ_EXPORT_ALL     = 201;
+    private static final int REQ_EXPORT_STARRED = 202;
+    private static final int REQ_IMPORT         = 203;
 
     @Override protected void onCreate(Bundle s) {
         super.onCreate(s);
@@ -25,7 +31,34 @@ public class SettingsActivity extends AppCompatActivity {
                 .replace(R.id.settings_container, new SettingsFragment())
                 .commit();
     }
+
     @Override public boolean onSupportNavigateUp() { finish(); return true; }
+
+    @Override protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (res != Activity.RESULT_OK || data == null) return;
+        Uri uri = data.getData();
+        if (uri == null) return;
+
+        if (req == REQ_EXPORT_ALL || req == REQ_EXPORT_STARRED) {
+            try {
+                OutputStream os = getContentResolver().openOutputStream(uri);
+                boolean ok = BackupManager.writeBackup(this, os, req == REQ_EXPORT_STARRED);
+                if (ok) Toast.makeText(this, "✅ تم التصدير بنجاح", Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Toast.makeText(this, "❌ فشل: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        } else if (req == REQ_IMPORT) {
+            try {
+                int count = BackupManager.importFromStream(this,
+                        getContentResolver().openInputStream(uri));
+                Toast.makeText(this, "✅ استُورد " + count + " نسخة", Toast.LENGTH_LONG).show();
+                sendBroadcast(new Intent(ClipboardService.ACTION_REFRESH));
+            } catch (Exception e) {
+                Toast.makeText(this, "❌ فشل الاستيراد", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
 
     public static class SettingsFragment extends PreferenceFragmentCompat {
         @Override public void onCreatePreferences(Bundle s, String r) {
@@ -37,14 +70,11 @@ public class SettingsActivity extends AppCompatActivity {
                 daysPref.setOnPreferenceChangeListener((p,v) -> {
                     int d = Integer.parseInt((String)v);
                     if (d>0) ClipDatabase.get(requireContext()).deleteOlderThan(d);
-                    Toast.makeText(requireContext(),
-                            d<0 ? "حفظ غير محدود" : "تم ضبط المدة على " + d + " يوم",
-                            Toast.LENGTH_SHORT).show();
                     return true;
                 });
             }
 
-            // الإشعار الدائم
+            // الإشعار
             SwitchPreferenceCompat notifPref = findPreference("pref_notification");
             if (notifPref!=null) {
                 notifPref.setOnPreferenceChangeListener((p,v) -> {
@@ -61,12 +91,47 @@ public class SettingsActivity extends AppCompatActivity {
                     boolean on = (Boolean)v;
                     if (on && !Settings.canDrawOverlays(requireContext())) {
                         Toast.makeText(requireContext(),
-                                "يرجى السماح للتطبيق بالظهور فوق التطبيقات",
+                                "اسمح للتطبيق بالظهور فوق التطبيقات الأخرى",
                                 Toast.LENGTH_LONG).show();
                         startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                                 Uri.parse("package:com.clipstack.app")));
                         return false;
                     }
+                    return true;
+                });
+            }
+
+            // تصدير
+            Preference exportPref = findPreference("pref_export");
+            if (exportPref!=null) {
+                exportPref.setOnPreferenceClickListener(p -> {
+                    SettingsActivity act = (SettingsActivity) requireActivity();
+                    new AlertDialog.Builder(requireContext())
+                        .setTitle("تصدير النسخ")
+                        .setItems(new String[]{"تصدير الكل", "تصدير المفضلة فقط"}, (d,w) -> {
+                            int req = (w==0) ? REQ_EXPORT_ALL : REQ_EXPORT_STARRED;
+                            boolean starred = (w==1);
+                            Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                                .addCategory(Intent.CATEGORY_OPENABLE)
+                                .setType("text/plain")
+                                .putExtra(Intent.EXTRA_TITLE,
+                                    BackupManager.getDefaultFilename(starred));
+                            act.startActivityForResult(i, req);
+                        })
+                        .setNegativeButton("إلغاء", null)
+                        .show();
+                    return true;
+                });
+            }
+
+            // استيراد
+            Preference importPref = findPreference("pref_import");
+            if (importPref!=null) {
+                importPref.setOnPreferenceClickListener(p -> {
+                    Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType("text/*");
+                    ((SettingsActivity)requireActivity()).startActivityForResult(i, REQ_IMPORT);
                     return true;
                 });
             }
@@ -80,31 +145,6 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
-            // التصدير
-            Preference exportPref = findPreference("pref_export");
-            if (exportPref!=null) {
-                exportPref.setOnPreferenceClickListener(p -> {
-                    new AlertDialog.Builder(requireContext())
-                        .setTitle("تصدير النسخ")
-                        .setItems(new String[]{"تصدير الكل", "تصدير المفضلة فقط"}, (d,w) -> {
-                            BackupManager.exportToFile(requireContext(), w==1);
-                        })
-                        .setNegativeButton(getString(R.string.cancel), null)
-                        .show();
-                    return true;
-                });
-            }
-
-            // الاستيراد
-            Preference importPref = findPreference("pref_import");
-            if (importPref!=null) {
-                importPref.setOnPreferenceClickListener(p -> {
-                    Intent pick = new Intent(Intent.ACTION_GET_CONTENT).setType("text/*");
-                    startActivityForResult(pick, 101);
-                    return true;
-                });
-            }
-
             // إمكانية الوصول
             Preference accessPref = findPreference("pref_accessibility");
             if (accessPref!=null) {
@@ -112,26 +152,6 @@ public class SettingsActivity extends AppCompatActivity {
                     startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
                     return true;
                 });
-            }
-        }
-
-        @Override public void onActivityResult(int req, int res, Intent data) {
-            super.onActivityResult(req, res, data);
-            if (req==101 && res==android.app.Activity.RESULT_OK && data!=null) {
-                try {
-                    java.io.InputStream is = requireContext()
-                            .getContentResolver().openInputStream(data.getData());
-                    byte[] bytes = new byte[is.available()];
-                    is.read(bytes);
-                    is.close();
-                    String content = new String(bytes);
-                    int count = BackupManager.importFromText(requireContext(), content);
-                    Toast.makeText(requireContext(),
-                            "✅ تم استيراد " + count + " نسخة", Toast.LENGTH_LONG).show();
-                } catch (Exception e) {
-                    Toast.makeText(requireContext(),
-                            "❌ فشل الاستيراد", Toast.LENGTH_SHORT).show();
-                }
             }
         }
     }

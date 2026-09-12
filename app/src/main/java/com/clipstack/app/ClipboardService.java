@@ -9,23 +9,26 @@ import androidx.core.app.NotificationCompat;
 public class ClipboardService extends Service {
     public static final String ACTION_REFRESH  = "com.clipstack.app.REFRESH";
     public static final String ACTION_SAVE_NOW = "com.clipstack.app.SAVE_NOW";
-    private static final String CH = "clip_ch";
-    private static final int    NOTIF_ID  = 1;
-    private static final int    ALERT_ID  = 2;
+    private static final String CH_SERVICE = "clip_service";
+    private static final String CH_ALERT   = "clip_alert";
+    private static final int ID_SERVICE = 1;
+    private static final int ID_ALERT   = 2;
 
     private android.content.ClipboardManager cm;
-    private ClipDatabase       db;
-    private SharedPreferences  prefs;
+    private SharedPreferences prefs;
+    private ClipDatabase      db;
 
     private final android.content.ClipboardManager.OnPrimaryClipChangedListener listener = () -> {
         try {
             if (cm == null || !cm.hasPrimaryClip()) return;
-            CharSequence cs = cm.getPrimaryClip().getItemAt(0).getText();
+            android.content.ClipData clip = cm.getPrimaryClip();
+            if (clip == null || clip.getItemCount() == 0) return;
+
+            CharSequence cs = clip.getItemAt(0).getText();
 
             if (cs == null) {
-                // Android 10+ لا يسمح بقراءة الحافظة من الخلفية
-                // نعرض إشعاراً يفتح MainActivity لالتقاطها
-                showCaptureNotification();
+                // Android 12+ منع القراءة من الخلفية — أرسل إشعاراً فورياً
+                showCaptureAlert();
                 return;
             }
 
@@ -45,7 +48,8 @@ public class ClipboardService extends Service {
             sendBroadcast(new Intent(ACTION_REFRESH));
 
         } catch (SecurityException e) {
-            showCaptureNotification();
+            // Android 12+ رفض الوصول — أرسل إشعاراً
+            showCaptureAlert();
         } catch (Exception ignored) {}
     };
 
@@ -55,16 +59,13 @@ public class ClipboardService extends Service {
         db    = ClipDatabase.get(this);
         cm    = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         cm.addPrimaryClipChangedListener(listener);
-        createChannel();
-        boolean showNotif = prefs.getBoolean("pref_notification", true);
-        if (showNotif) startForeground(NOTIF_ID, buildPersistentNotif());
-        else           startForeground(NOTIF_ID, buildSilentNotif());
+        createChannels();
+        startForeground(ID_SERVICE, buildServiceNotif());
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_SAVE_NOW.equals(intent.getAction())) {
-            // MainActivity فتحت بسببنا — ستقرأ الحافظة هناك
-            cancelCaptureNotification();
+            cancelAlert();
         }
         return START_STICKY;
     }
@@ -73,66 +74,67 @@ public class ClipboardService extends Service {
         if (cm != null) cm.removePrimaryClipChangedListener(listener);
         super.onDestroy();
     }
+
     @Override public IBinder onBind(Intent i) { return null; }
 
-    // ── الإشعار الدائم ──
-    private Notification buildPersistentNotif() {
-        return baseNotif()
+    // ── إشعار دائم للخدمة ──
+    private Notification buildServiceNotif() {
+        boolean show = prefs.getBoolean("pref_notification", true);
+        PendingIntent pi = PendingIntent.getActivity(this, 0,
+                new Intent(this, MainActivity.class),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+
+        return new NotificationCompat.Builder(this, CH_SERVICE)
+                .setSmallIcon(android.R.drawable.ic_menu_edit)
                 .setContentTitle("Clip Stack")
-                .setContentText(getString(R.string.service_notification))
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setOngoing(true)
-                .build();
-    }
-    private Notification buildSilentNotif() {
-        return baseNotif()
-                .setPriority(NotificationCompat.PRIORITY_MIN)
+                .setContentText("مراقبة الحافظة نشطة")
+                .setContentIntent(pi)
+                .setPriority(show ? NotificationCompat.PRIORITY_LOW : NotificationCompat.PRIORITY_MIN)
                 .setOngoing(true)
                 .setVisibility(NotificationCompat.VISIBILITY_SECRET)
                 .build();
     }
 
     // ── إشعار "اضغط لحفظ" ──
-    private void showCaptureNotification() {
+    private void showCaptureAlert() {
         Intent open = new Intent(this, MainActivity.class)
                 .setAction(ACTION_SAVE_NOW)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent pi = PendingIntent.getActivity(this, ALERT_ID, open,
+        PendingIntent pi = PendingIntent.getActivity(this, ID_ALERT, open,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
-        Notification n = baseNotif()
+        Notification n = new NotificationCompat.Builder(this, CH_ALERT)
+                .setSmallIcon(android.R.drawable.ic_menu_save)
                 .setContentTitle("📋 تم النسخ")
                 .setContentText("اضغط لحفظه في Clip Stack")
                 .setContentIntent(pi)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_SOUND)
                 .setAutoCancel(true)
+                .setTimeoutAfter(30000) // يختفي بعد 30 ثانية
                 .build();
 
+        getSystemService(NotificationManager.class).notify(ID_ALERT, n);
+    }
+
+    private void cancelAlert() {
+        getSystemService(NotificationManager.class).cancel(ID_ALERT);
+    }
+
+    private void createChannels() {
         NotificationManager nm = getSystemService(NotificationManager.class);
-        if (nm != null) nm.notify(ALERT_ID, n);
-    }
 
-    private void cancelCaptureNotification() {
-        NotificationManager nm = getSystemService(NotificationManager.class);
-        if (nm != null) nm.cancel(ALERT_ID);
-    }
+        // قناة الخدمة الدائمة (صامتة)
+        NotificationChannel svc = new NotificationChannel(
+                CH_SERVICE, "حالة الخدمة", NotificationManager.IMPORTANCE_MIN);
+        svc.setSound(null, null);
+        svc.setShowBadge(false);
+        nm.createNotificationChannel(svc);
 
-    private NotificationCompat.Builder baseNotif() {
-        PendingIntent pi = PendingIntent.getActivity(this, 0,
-                new Intent(this, MainActivity.class),
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        return new NotificationCompat.Builder(this, CH)
-                .setSmallIcon(android.R.drawable.ic_menu_edit)
-                .setContentIntent(pi)
-                .setVisibility(NotificationCompat.VISIBILITY_SECRET);
-    }
-
-    private void createChannel() {
-        NotificationChannel ch = new NotificationChannel(CH,"Clip Stack",
-                NotificationManager.IMPORTANCE_LOW);
-        ch.setSound(null, null);
-        ch.setShowBadge(false);
-        getSystemService(NotificationManager.class).createNotificationChannel(ch);
+        // قناة تنبيه النسخ (مع صوت)
+        NotificationChannel alert = new NotificationChannel(
+                CH_ALERT, "تنبيه نسخ جديد", NotificationManager.IMPORTANCE_HIGH);
+        nm.createNotificationChannel(alert);
     }
 
     public static void start(Context ctx) {
