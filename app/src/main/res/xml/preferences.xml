@@ -2,7 +2,7 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <PreferenceCategory android:title="عام">
+    <PreferenceCategory android:title="الحفظ والتشغيل">
 
         <ListPreference
             android:key="pref_days"
@@ -10,30 +10,42 @@
             android:entries="@array/days_entries"
             android:entryValues="@array/days_values"
             android:defaultValue="-1"
-            android:summary="%s"
+            android:icon="@android:drawable/ic_menu_recent_history"
             app:useSimpleSummaryProvider="true" />
 
         <SwitchPreferenceCompat
             android:key="pref_notification"
             android:title="@string/pref_notif_title"
             android:summary="@string/pref_notif_summary"
-            android:defaultValue="true" />
+            android:defaultValue="true"
+            android:icon="@android:drawable/ic_dialog_info" />
 
         <SwitchPreferenceCompat
             android:key="pref_float_button"
             android:title="@string/pref_float_title"
             android:summary="@string/pref_float_summary"
-            android:defaultValue="false" />
+            android:defaultValue="false"
+            android:icon="@android:drawable/ic_input_add" />
 
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="الخصوصية">
+    <PreferenceCategory android:title="الخصوصية والأمان">
 
         <Preference
             android:key="pref_blacklist"
             android:title="@string/pref_blacklist_title"
             android:summary="@string/pref_blacklist_summary"
             android:icon="@android:drawable/ic_menu_close_clear_cancel" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="إمكانية الوصول">
+
+        <Preference
+            android:key="pref_accessibility"
+            android:title="تفعيل إمكانية الوصول"
+            android:summary="مطلوب للتعرف على التطبيق المصدر وتحسين التقاط النسخ"
+            android:icon="@android:drawable/ic_menu_preferences" />
 
     </PreferenceCategory>
 

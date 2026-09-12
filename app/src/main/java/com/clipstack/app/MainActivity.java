@@ -3,6 +3,7 @@ package com.clipstack.app;
 import android.content.*;
 import android.content.pm.*;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.view.*;
 import android.widget.*;
 import androidx.appcompat.app.*;
@@ -18,13 +19,14 @@ import java.util.*;
 
 public class MainActivity extends AppCompatActivity {
 
-    private ClipDatabase db;
-    private ClipAdapter  adapter;
-    private TabLayout    tabs;
-    private RecyclerView recycler;
-    private LinearLayout emptyView;
+    private ClipDatabase      db;
+    private ClipAdapter       adapter;
+    private TabLayout         tabs;
+    private RecyclerView      recycler;
+    private LinearLayout      emptyView;
+    private SharedPreferences prefs;
 
-    private String  filterPkg   = null;  // null = الكل
+    private String  filterPkg   = null;
     private String  searchQuery = "";
     private boolean showStarred = false;
     private MenuItem starMenuItem;
@@ -36,7 +38,8 @@ public class MainActivity extends AppCompatActivity {
     @Override protected void onCreate(Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_main);
-        db = ClipDatabase.get(this);
+        db    = ClipDatabase.get(this);
+        prefs = PreferenceManager.getDefaultSharedPreferences(this);
 
         Toolbar tb = findViewById(R.id.toolbar);
         setSupportActionBar(tb);
@@ -69,10 +72,48 @@ public class MainActivity extends AppCompatActivity {
 
     @Override protected void onResume() {
         super.onResume();
-        registerReceiver(refreshRx, new IntentFilter(ClipboardService.ACTION_REFRESH),
+        // قراءة الحافظة عند فتح التطبيق (يعمل دائماً لأننا في المقدمة)
+        captureClipboardNow();
+
+        registerReceiver(refreshRx,
+                new IntentFilter(ClipboardService.ACTION_REFRESH),
                 Context.RECEIVER_NOT_EXPORTED);
-        rebuildTabs(); reload();
+        rebuildTabs();
+        reload();
     }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // فتحنا بسبب إشعار "اضغط لحفظ"
+        if (ClipboardService.ACTION_SAVE_NOW.equals(intent.getAction())) {
+            captureClipboardNow();
+        }
+    }
+
+    private void captureClipboardNow() {
+        try {
+            android.content.ClipboardManager cm =
+                (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm == null || !cm.hasPrimaryClip()) return;
+            CharSequence cs = cm.getPrimaryClip().getItemAt(0).getText();
+            if (cs == null) return;
+            String text = cs.toString().trim();
+            if (text.isEmpty()) return;
+
+            String lastClip = prefs.getString(AppTrackerService.KEY_LAST_CLIP, "");
+            if (text.equals(lastClip)) return;
+            prefs.edit().putString(AppTrackerService.KEY_LAST_CLIP, text).apply();
+
+            String pkg = prefs.getString(AppTrackerService.KEY_PKG, "");
+            if (!pkg.isEmpty() && db.isBlacklisted(pkg)) return;
+
+            db.insert(text, pkg);
+            String days = prefs.getString("pref_days", "-1");
+            db.deleteOlderThan(Integer.parseInt(days));
+            reload(); rebuildTabs();
+        } catch (Exception ignored) {}
+    }
+
     @Override protected void onPause() {
         super.onPause();
         try { unregisterReceiver(refreshRx); } catch (Exception ignored) {}
@@ -87,13 +128,12 @@ public class MainActivity extends AppCompatActivity {
             tabs.addTab(tabs.newTab().setText(appLabel(pkg)).setTag(pkg));
         }
         if (saved != null) {
-            for (int i=0;i<tabs.getTabCount();i++) {
+            for (int i=0; i<tabs.getTabCount(); i++) {
                 TabLayout.Tab t = tabs.getTabAt(i);
                 if (t!=null && saved.equals(t.getTag())) { tabs.selectTab(t); return; }
             }
         }
-        if (tabs.getTabCount()>0) tabs.selectTab(tabs.getTabAt(0));
-        filterPkg = null;
+        if (tabs.getTabCount()>0) { tabs.selectTab(tabs.getTabAt(0)); filterPkg = null; }
     }
 
     private String appLabel(String pkg) {
@@ -122,13 +162,15 @@ public class MainActivity extends AppCompatActivity {
         starMenuItem = menu.findItem(R.id.action_starred);
         MenuItem si = menu.findItem(R.id.action_search);
         SearchView sv = (SearchView) si.getActionView();
-        sv.setQueryHint(getString(R.string.search_hint));
-        sv.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
-            @Override public boolean onQueryTextSubmit(String q) { return false; }
-            @Override public boolean onQueryTextChange(String q) {
-                searchQuery = q; reload(); return true;
-            }
-        });
+        if (sv != null) {
+            sv.setQueryHint(getString(R.string.search_hint));
+            sv.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+                @Override public boolean onQueryTextSubmit(String q) { return false; }
+                @Override public boolean onQueryTextChange(String q) {
+                    searchQuery = q; reload(); return true;
+                }
+            });
+        }
         return true;
     }
 
@@ -144,36 +186,38 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(this, SettingsActivity.class));
         } else if (id == R.id.action_delete_all) {
             new AlertDialog.Builder(this)
-                .setTitle(R.string.delete)
-                .setMessage(R.string.confirm_delete_all)
-                .setPositiveButton(R.string.delete, (d,w) -> { db.deleteNonStarred(); reload(); rebuildTabs(); })
-                .setNegativeButton(R.string.cancel, null).show();
+                .setTitle(getString(R.string.delete))
+                .setMessage(getString(R.string.confirm_delete_all))
+                .setPositiveButton(getString(R.string.delete),
+                    (d,w) -> { db.deleteNonStarred(); reload(); rebuildTabs(); })
+                .setNegativeButton(getString(R.string.cancel), null).show();
         }
         return super.onOptionsItemSelected(item);
     }
 
     // ── Edit Dialog ──
-    private void showEditDialog(ClipItem item) {
+    void showEditDialog(ClipItem item) {
         View v = LayoutInflater.from(this).inflate(R.layout.dialog_edit, null);
         TextInputEditText et = v.findViewById(R.id.edit_text);
-        if (item!=null) {
+
+        if (item != null) {
             et.setText(item.text);
             et.setSelection(item.text.length());
         } else {
-            // paste current clipboard
             try {
                 android.content.ClipboardManager cm =
                     (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 if (cm!=null && cm.hasPrimaryClip()) {
                     CharSequence cs = cm.getPrimaryClip().getItemAt(0).getText();
-                    if (cs!=null) et.setText(cs.toString());
+                    if (cs!=null) { et.setText(cs.toString()); et.selectAll(); }
                 }
             } catch (Exception ignored) {}
         }
+
         AlertDialog.Builder b = new AlertDialog.Builder(this)
-            .setTitle(item!=null ? getString(R.string.edit_clip) : getString(R.string.edit_clip))
+            .setTitle(item!=null ? getString(R.string.edit_clip) : "إضافة نص")
             .setView(v)
-            .setPositiveButton(R.string.save, (d,w) -> {
+            .setPositiveButton(getString(R.string.save), (d,w) -> {
                 String txt = et.getText()!=null ? et.getText().toString().trim() : "";
                 if (!txt.isEmpty()) {
                     if (item!=null) db.delete(item.id);
@@ -181,27 +225,27 @@ public class MainActivity extends AppCompatActivity {
                     reload(); rebuildTabs();
                 }
             })
-            .setNegativeButton(R.string.cancel, null);
+            .setNegativeButton(getString(R.string.cancel), null);
+
         if (item!=null) {
-            b.setNeutralButton(R.string.delete, (d,w) -> {
+            b.setNeutralButton(getString(R.string.delete), (d,w) -> {
                 db.delete(item.id); reload(); rebuildTabs();
             });
         }
+
         AlertDialog dlg = b.create();
         dlg.show();
-        dlg.getButton(AlertDialog.BUTTON_POSITIVE)
-            .setTextColor(getColor(R.color.primary));
-        dlg.getButton(AlertDialog.BUTTON_NEGATIVE)
-            .setTextColor(getColor(R.color.text_secondary));
-        if (item!=null)
-            dlg.getButton(AlertDialog.BUTTON_NEUTRAL)
-                .setTextColor(getColor(R.color.delete_red));
+        try {
+            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(getColor(R.color.primary));
+            dlg.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(getColor(R.color.text_secondary));
+            if (item!=null)
+                dlg.getButton(AlertDialog.BUTTON_NEUTRAL).setTextColor(getColor(R.color.delete_red));
+        } catch (Exception ignored) {}
     }
 
     // ══ Adapter ══════════════════════════════════════
-    private class ClipAdapter extends RecyclerView.Adapter<ClipAdapter.VH> {
+    class ClipAdapter extends RecyclerView.Adapter<ClipAdapter.VH> {
         private List<ClipItem> data = new ArrayList<>();
-
         void setData(List<ClipItem> d) { data=d; notifyDataSetChanged(); }
 
         @Override public VH onCreateViewHolder(ViewGroup p, int t) {
@@ -211,15 +255,9 @@ public class MainActivity extends AppCompatActivity {
 
         @Override public void onBindViewHolder(VH h, int pos) {
             ClipItem item = data.get(pos);
-
-            // text
             h.tvText.setText(item.text);
+            h.tvDate.setText(android.text.format.DateFormat.format("dd/MM · HH:mm", item.date));
 
-            // date
-            h.tvDate.setText(android.text.format.DateFormat
-                    .format("dd/MM  HH:mm", item.date));
-
-            // source chip
             if (item.sourcePackage!=null && !item.sourcePackage.isEmpty()) {
                 h.tvSource.setText(appLabel(item.sourcePackage));
                 h.tvSource.setVisibility(View.VISIBLE);
@@ -227,36 +265,35 @@ public class MainActivity extends AppCompatActivity {
                 h.tvSource.setVisibility(View.GONE);
             }
 
-            // star
+            // نجمة
             h.btnStar.setIconResource(item.starred
                     ? android.R.drawable.btn_star_big_on
                     : android.R.drawable.btn_star_big_off);
             h.btnStar.setOnClickListener(v -> {
                 db.toggleStar(item.id, item.starred);
-                if (showStarred) reload(); else notifyItemChanged(pos);
                 item.starred = !item.starred;
                 h.btnStar.setIconResource(item.starred
                         ? android.R.drawable.btn_star_big_on
                         : android.R.drawable.btn_star_big_off);
+                if (showStarred) { reload(); rebuildTabs(); }
             });
 
-            // copy
+            // نسخ
             h.btnCopy.setOnClickListener(v -> {
                 android.content.ClipboardManager cm =
                     (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 if (cm!=null) cm.setText(item.text);
-                Toast.makeText(MainActivity.this, R.string.copied, Toast.LENGTH_SHORT).show();
+                Toast.makeText(MainActivity.this, getString(R.string.copied), Toast.LENGTH_SHORT).show();
             });
 
-            // share
-            h.btnShare.setOnClickListener(v -> {
+            // مشاركة
+            h.btnShare.setOnClickListener(v ->
                 startActivity(Intent.createChooser(
                     new Intent(Intent.ACTION_SEND)
                         .putExtra(Intent.EXTRA_TEXT, item.text)
-                        .setType("text/plain"), null));
-            });
+                        .setType("text/plain"), null)));
 
-            // tap to edit
+            // النقر لتحرير
             h.card.setOnClickListener(v -> showEditDialog(item));
         }
 
