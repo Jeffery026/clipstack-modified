@@ -8,41 +8,82 @@ import android.view.inputmethod.InputMethodManager;
 import android.view.accessibility.AccessibilityEvent;
 import java.util.*;
 
+/**
+ * خدمة إمكانية الوصول — تتولى المهام التالية:
+ * 1. تتبّع التطبيق الأمامي الحقيقي (تصفية الكيبورد وواجهات النظام)
+ * 2. تسجيل مستمع الحافظة من سياقها المرتفع (Accessibility context)
+ *    لأن Android 16 يمنع الخدمات العادية من قراءة الحافظة في الخلفية
+ */
 public class AppTrackerService extends AccessibilityService {
+
     public static final String KEY_PKG       = "foreground_pkg";
     public static final String KEY_LAST_CLIP = "last_captured_clip";
 
     private SharedPreferences prefs;
     private ClipDatabase      db;
-    private android.content.ClipboardManager cm;
-    private Set<String>       keyboardPackages = new HashSet<>();
+    private ClipboardManager  cm;
+    private Set<String>       ignoredPkgs = new HashSet<>();
 
-    @Override protected void onServiceConnected() {
+    // آخر تطبيق "حقيقي" قبل ظهور الكيبورد أو قوائم النظام
+    private String lastRealPkg = "";
+
+    private final ClipboardManager.OnPrimaryClipChangedListener clipListener = () -> {
+        // نقرأ الحافظة هنا — نحن داخل سياق AccessibilityService
+        try {
+            if (cm == null || !cm.hasPrimaryClip()) return;
+            ClipData clip = cm.getPrimaryClip();
+            if (clip == null || clip.getItemCount() == 0) return;
+            CharSequence cs = clip.getItemAt(0).getText();
+            if (cs == null) return;
+
+            String text = cs.toString().trim();
+            if (text.isEmpty()) return;
+
+            // تجنب التكرار
+            String lastClip = prefs.getString(KEY_LAST_CLIP, "");
+            if (text.equals(lastClip)) return;
+
+            // نستخدم آخر تطبيق حقيقي (ليس كيبورد ولا نظام)
+            String sourcePkg = lastRealPkg;
+            if (!sourcePkg.isEmpty() && db.isBlacklisted(sourcePkg)) return;
+
+            prefs.edit()
+                .putString(KEY_LAST_CLIP, text)
+                .putString(KEY_PKG, sourcePkg)
+                .apply();
+
+            db.insert(text, sourcePkg);
+
+            // تنظيف حسب إعداد المدة
+            try {
+                int days = Integer.parseInt(prefs.getString("pref_days", "-1"));
+                db.deleteOlderThan(days);
+            } catch (Exception ignored) {}
+
+            sendBroadcast(new Intent(ClipboardService.ACTION_REFRESH));
+
+        } catch (Exception ignored) {}
+    };
+
+    @Override
+    protected void onServiceConnected() {
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         db    = ClipDatabase.get(this);
-        cm    = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-        loadKeyboardPackages();
+        cm    = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+
+        // بناء قائمة الحزم المتجاهَلة
+        buildIgnoredPackages();
+
+        // تسجيل مستمع الحافظة من سياق AccessibilityService
+        if (cm != null) {
+            cm.addPrimaryClipChangedListener(clipListener);
+        }
+
         super.onServiceConnected();
     }
 
-    private void loadKeyboardPackages() {
-        keyboardPackages.clear();
-        try {
-            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            for (InputMethodInfo info : imm.getEnabledInputMethodList()) {
-                keyboardPackages.add(info.getPackageName());
-            }
-        } catch (Exception ignored) {}
-        // أضف ألفاظ شائعة للوحات المفاتيح
-        keyboardPackages.add("com.google.android.inputmethod.latin");
-        keyboardPackages.add("com.samsung.android.honeyboard");
-        keyboardPackages.add("com.swiftkey");
-        keyboardPackages.add("com.touchtype.swiftkey");
-        keyboardPackages.add("com.nuance.swype");
-        keyboardPackages.add("com.microsoft.swiftkey");
-    }
-
-    @Override public void onAccessibilityEvent(AccessibilityEvent e) {
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent e) {
         if (e.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
 
         CharSequence pkg = e.getPackageName();
@@ -52,55 +93,61 @@ public class AppTrackerService extends AccessibilityService {
         // تجاهل تطبيقنا
         if (pkgStr.contains("com.clipstack.app")) return;
 
-        // تجاهل لوحة المفاتيح — نحتفظ بالتطبيق الأخير الحقيقي
-        if (isKeyboard(pkgStr)) {
-            // عند ظهور لوحة المفاتيح، نحاول قراءة الحافظة
-            // لأن المستخدم ربما نسخ للتو
-            tryReadClipboard(prefs.getString(KEY_PKG, ""));
-            return;
+        // إذا كان تطبيقاً حقيقياً — حدّث lastRealPkg
+        if (!isIgnored(pkgStr)) {
+            lastRealPkg = pkgStr;
+            prefs.edit().putString(KEY_PKG, pkgStr).apply();
         }
-
-        // تحديث التطبيق الحالي (ليس لوحة مفاتيح)
-        prefs.edit().putString(KEY_PKG, pkgStr).apply();
-
-        // محاولة قراءة الحافظة عند تغيير التطبيق
-        if (!db.isBlacklisted(pkgStr)) {
-            tryReadClipboard(pkgStr);
-        }
+        // إذا كان كيبورد أو نظام — احتفظ بـ lastRealPkg كما هو
     }
 
-    private boolean isKeyboard(String pkg) {
-        if (keyboardPackages.contains(pkg)) return true;
-        // أنماط شائعة لأسماء تطبيقات لوحة المفاتيح
-        return pkg.contains("keyboard") || pkg.contains("inputmethod") ||
-               pkg.contains("ime.") || pkg.contains(".ime") ||
-               pkg.contains("honeyboard") || pkg.contains("swiftkey");
+    @Override
+    public void onInterrupt() {}
+
+    @Override
+    public void onDestroy() {
+        if (cm != null) cm.removePrimaryClipChangedListener(clipListener);
+        super.onDestroy();
     }
 
-    private void tryReadClipboard(String sourcePkg) {
+    // ── قائمة الحزم المتجاهَلة ──
+    private void buildIgnoredPackages() {
+        ignoredPkgs.clear();
+
+        // لوحات المفاتيح المثبتة
         try {
-            if (cm == null || !cm.hasPrimaryClip()) return;
-            android.content.ClipData clip = cm.getPrimaryClip();
-            if (clip == null || clip.getItemCount() == 0) return;
-            CharSequence cs = clip.getItemAt(0).getText();
-            if (cs == null) return;
-            String text = cs.toString().trim();
-            if (text.isEmpty()) return;
-
-            // تجنب التكرار
-            String lastClip = prefs.getString(KEY_LAST_CLIP, "");
-            if (text.equals(lastClip)) return;
-            if (sourcePkg != null && !sourcePkg.isEmpty() && db.isBlacklisted(sourcePkg)) return;
-
-            prefs.edit().putString(KEY_LAST_CLIP, text).apply();
-            db.insert(text, sourcePkg != null ? sourcePkg : "");
-
-            String days = prefs.getString("pref_days", "-1");
-            db.deleteOlderThan(Integer.parseInt(days));
-
-            sendBroadcast(new Intent(ClipboardService.ACTION_REFRESH));
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            for (InputMethodInfo info : imm.getEnabledInputMethodList()) {
+                ignoredPkgs.add(info.getPackageName());
+            }
         } catch (Exception ignored) {}
+
+        // حزم النظام الشائعة
+        ignoredPkgs.addAll(Arrays.asList(
+            "com.android.systemui",
+            "com.android.documentsui",
+            "com.android.settings",
+            "com.android.packageinstaller",
+            "com.android.permissioncontroller",
+            "com.android.providers.media",
+            "com.google.android.inputmethod.latin",
+            "com.samsung.android.honeyboard",
+            "com.touchtype.swiftkey",
+            "com.microsoft.swiftkey",
+            "com.nuance.swype",
+            "com.swiftkey.swiftkeyapp"
+        ));
     }
 
-    @Override public void onInterrupt() {}
+    private boolean isIgnored(String pkg) {
+        if (ignoredPkgs.contains(pkg)) return true;
+        return pkg.contains("keyboard")     ||
+               pkg.contains("inputmethod")  ||
+               pkg.contains(".ime")         ||
+               pkg.contains("launcher")     ||
+               pkg.contains("systemui")     ||
+               pkg.contains("documentsui")  ||
+               pkg.contains("honeyboard")   ||
+               pkg.contains("swiftkey");
+    }
 }
