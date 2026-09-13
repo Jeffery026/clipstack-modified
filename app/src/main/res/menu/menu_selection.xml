@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/sel_select_all"
+        android:title="تحديد الكل"
+        android:icon="@android:drawable/checkbox_on_background"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/sel_delete"
+        android:title="حذف"
+        android:icon="@android:drawable/ic_menu_delete"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/sel_share"
+        android:title="مشاركة"
+        android:icon="@android:drawable/ic_menu_share"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/sel_star"
+        android:title="إضافة للمفضلة"
+        app:showAsAction="never" />
+
+</menu>

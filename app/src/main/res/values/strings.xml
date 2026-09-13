@@ -46,13 +46,11 @@
     <string name="import_success">تم الاستيراد بنجاح</string>
     <string-array name="theme_entries">
         <item>فاتح</item>
-        <item>ليلي خفيف (Dim)</item>
-        <item>ليلي غامق</item>
+        <item>داكن</item>
         <item>تلقائي (حسب النظام)</item>
     </string-array>
     <string-array name="theme_values">
         <item>light</item>
-        <item>dim</item>
         <item>dark</item>
         <item>system</item>
     </string-array>

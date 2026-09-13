@@ -8,7 +8,9 @@
     app:cardCornerRadius="14dp"
     app:cardElevation="1dp"
     app:strokeWidth="0dp"
-    app:cardBackgroundColor="@color/card_bg">
+    app:cardBackgroundColor="@color/card_bg"
+    app:checkedIconTint="@color/primary"
+    app:checkable="true">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -19,7 +21,7 @@
         android:paddingTop="12dp"
         android:paddingBottom="8dp">
 
-        <!-- Row 1: source chip + date -->
+        <!-- الصف الأول: المصدر + التاريخ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -54,7 +56,7 @@
                 android:textColor="@color/text_secondary" />
         </LinearLayout>
 
-        <!-- Row 2: main text -->
+        <!-- النص الرئيسي -->
         <TextView
             android:id="@+id/tv_text"
             android:layout_width="match_parent"
@@ -66,15 +68,14 @@
             android:lineSpacingMultiplier="1.3"
             android:textColor="@color/text_primary" />
 
-        <!-- Row 3: action buttons -->
+        <!-- أزرار الإجراءات -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:gravity="end">
 
-            <!-- Star -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_star"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
@@ -88,7 +89,6 @@
                 app:iconSize="22dp"
                 app:iconTint="@color/star_color" />
 
-            <!-- Copy -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_copy"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
@@ -102,7 +102,6 @@
                 app:iconSize="20dp"
                 app:iconTint="@color/icon_tint" />
 
-            <!-- Share -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_share"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
@@ -115,6 +114,20 @@
                 app:icon="@android:drawable/ic_menu_share"
                 app:iconSize="20dp"
                 app:iconTint="@color/icon_tint" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_delete"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                app:iconPadding="0dp"
+                app:icon="@android:drawable/ic_menu_delete"
+                app:iconSize="20dp"
+                app:iconTint="@color/delete_red" />
+
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
