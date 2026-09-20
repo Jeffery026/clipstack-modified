@@ -275,8 +275,11 @@ public class MainActivity extends AppCompatActivity {
         void setData(List<ClipItem> d) { data=d; notifyDataSetChanged(); }
 
         @Override public VH onCreateViewHolder(ViewGroup p, int t) {
-            return new VH(LayoutInflater.from(p.getContext())
-                    .inflate(R.layout.item_clip, p, false));
+            View view = LayoutInflater.from(p.getContext())
+                    .inflate(R.layout.item_clip, p, false);
+            if (view instanceof MaterialCardView)
+                ((MaterialCardView) view).setCheckable(true);
+            return new VH(view);
         }
 
         @Override public void onBindViewHolder(VH h, int pos) {

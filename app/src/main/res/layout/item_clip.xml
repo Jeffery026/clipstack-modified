@@ -9,8 +9,7 @@
     app:cardElevation="1dp"
     app:strokeWidth="0dp"
     app:cardBackgroundColor="@color/card_bg"
-    app:checkedIconTint="@color/primary"
-    app:checkable="true">
+>
 
     <LinearLayout
         android:layout_width="match_parent"
