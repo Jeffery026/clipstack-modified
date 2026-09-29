@@ -18,23 +18,20 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - uses: android-actions/setup-android@v3
-
-      - name: قبول التراخيص وتثبيت SDK
+      - name: قبول تراخيص Android SDK
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          mkdir -p $ANDROID_SDK_ROOT/licenses
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
 
       - name: صلاحية التشغيل
         run: chmod +x gradlew
 
       - name: بناء APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: تحقق من وجود APK
-        run: |
-          echo "=== ملفات APK ==="
-          find app/build/outputs -name "*.apk" 2>/dev/null || echo "لا يوجد APK"
+        run: ./gradlew assembleDebug --no-daemon
+        env:
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
       - name: رفع APK
         uses: actions/upload-artifact@v4
@@ -49,7 +46,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: |
-            **/*.log
-            **/build/outputs/**
+          path: "**/*.log"
           retention-days: 7
